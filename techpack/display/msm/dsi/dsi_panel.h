@@ -378,5 +378,4 @@ int dsi_panel_create_cmd_packets(const char *data,
 				struct dsi_cmd_desc *cmd);
 void dsi_panel_destroy_cmd_packets(struct dsi_panel_cmd_set *set);
 void dsi_panel_dealloc_cmd_packets(struct dsi_panel_cmd_set *set);
-
 #endif /* _DSI_PANEL_H_ */
