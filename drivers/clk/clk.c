@@ -1013,9 +1013,11 @@ static void clk_core_unprepare(struct clk_core *core)
 
 static void clk_core_unprepare_lock(struct clk_core *core)
 {
-	clk_prepare_lock();
+	if (!oops_in_progress)
+		clk_prepare_lock();
 	clk_core_unprepare(core);
-	clk_prepare_unlock();
+	if (!oops_in_progress)
+		clk_prepare_unlock();
 }
 
 /**
