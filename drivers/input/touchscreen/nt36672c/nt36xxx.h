@@ -28,11 +28,6 @@
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
 
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-#include <linux/earlysuspend.h>
-#endif
-
 #include "nt36xxx_mem_map.h"
 
 #define FW_HISTORY_SIZE	128
@@ -42,7 +37,6 @@
 #define PINCTRL_STATE_ACTIVE		"pmx_ts_active"
 #define PINCTRL_STATE_SUSPEND		"pmx_ts_suspend"
 #define PINCTRL_STATE_RELEASE		"pmx_ts_release"
-#define MI_DRM_NOTIFIER
 
 /* ---GPIO number--- */
 #define NVTTOUCH_RST_PIN 980
@@ -125,16 +119,7 @@ struct nvt_ts_data {
 	struct work_struct switch_mode_work;
 	uint16_t addr;
 	int8_t phys[32];
-
-#ifdef MI_DRM_NOTIFIER
 	struct notifier_block drm_notif;
-#else
-	struct notifier_block fb_notif;
-#endif
-#if defined(CONFIG_HAS_EARLYSUSPEND)
-	struct early_suspend early_suspend;
-#endif
-
 	uint8_t fw_ver;
 	uint8_t x_num;
 	uint8_t y_num;
@@ -194,19 +179,19 @@ struct nvt_flash_data{
 #endif
 
 typedef enum {
-	RESET_STATE_INIT = 0xA0,/* IC reset */
+	RESET_STATE_INIT = 0xA0,	/* IC reset */
 	RESET_STATE_REK,		/* ReK baseline */
-	RESET_STATE_REK_FINISH,	/* baseline is ready */
-	RESET_STATE_NORMAL_RUN,	/* normal run */
+	RESET_STATE_REK_FINISH,		/* baseline is ready */
+	RESET_STATE_NORMAL_RUN,		/* normal run */
 	RESET_STATE_MAX  = 0xAF
 } RST_COMPLETE_STATE;
 
 typedef enum {
-	EVENT_MAP_HOST_CMD						= 0x50,
+	EVENT_MAP_HOST_CMD			= 0x50,
 	EVENT_MAP_HANDSHAKING_or_SUB_CMD_BYTE	= 0x51,
-	EVENT_MAP_RESET_COMPLETE				= 0x60,
-	EVENT_MAP_FWINFO						= 0x78,
-	EVENT_MAP_PROJECTID						= 0x9A,
+	EVENT_MAP_RESET_COMPLETE		= 0x60,
+	EVENT_MAP_FWINFO			= 0x78,
+	EVENT_MAP_PROJECTID			= 0x9A,
 } SPI_EVENT_MAP;
 
 //---SPI READ/WRITE---
