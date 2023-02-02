@@ -1,3 +1,4 @@
+ifeq (,,)
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
         dtbo-$(CONFIG_ARCH_KONA) += \
                 kona-cdp-overlay.dtbo \
@@ -284,6 +285,14 @@ sdm660-internal-codec-cdp.dtb \
         sdm660-pm660a-headset-jacktype-no-rcm.dtb \
         sdm660-usbc-audio-mtp.dtb \
         sdm660-usbc-audio-rcm.dtb
+endif
+endif
+
+ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
+dtbo-$(CONFIG_ARCH_LAGOON) += gauguin-sm6350-overlay.dtbo
+gauguin-sm6350-overlay.dtbo-base := lagoon.dtb
+else
+dtb-$(CONFIG_ARCH_LAGOON) += gauguin-sm6350.dtb
 endif
 
 always		:= $(dtb-y)
