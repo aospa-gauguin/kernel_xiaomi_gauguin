@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _DSI_PANEL_H_
@@ -94,6 +94,13 @@ struct dsi_dfps_capabilities {
 	u32 preferred_fps_idx;
 };
 
+struct dsi_qsync_capabilities {
+	/* qsync disabled if qsync_min_fps = 0 */
+	u32 qsync_min_fps;
+	u32 *qsync_min_fps_list;
+	int qsync_min_fps_list_len;
+};
+
 struct dsi_dyn_clk_caps {
 	bool dyn_clk_support;
 	u32 *bit_clk_list;
@@ -125,6 +132,7 @@ struct dsi_backlight_config {
 	u32 bl_scale;
 	u32 bl_scale_sv;
 	bool bl_inverted_dbv;
+	u32 bl_dcs_subtype;
 
 	int en_gpio;
 	/* PWM params */
@@ -222,7 +230,7 @@ struct dsi_panel {
 
 	bool panel_initialized;
 	bool te_using_watchdog_timer;
-	u32 qsync_min_fps;
+	struct dsi_qsync_capabilities qsync_caps;
 
 	char dsc_pps_cmd[DSI_CMD_PPS_SIZE];
 	enum dsi_dms_mode dms_mode;
