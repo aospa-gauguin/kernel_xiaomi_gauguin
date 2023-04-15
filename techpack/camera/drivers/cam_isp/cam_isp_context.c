@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #include <linux/debugfs.h>
@@ -3270,6 +3271,13 @@ static int __cam_isp_ctx_flush_req_in_top_state(
 		}
 
 		spin_lock_bh(&ctx->lock);
+		/*
+		 * As HW is stopped already No request will move from
+		 * one list to other good time to flush reqs.
+		 */
+		CAM_DBG(CAM_ISP, "try to flush pending list");
+		rc = __cam_isp_ctx_flush_req(ctx, &ctx->pending_req_list,
+			flush_req);
 		if (!list_empty(&ctx->wait_req_list))
 			rc = __cam_isp_ctx_flush_req(ctx, &ctx->wait_req_list,
 				flush_req);

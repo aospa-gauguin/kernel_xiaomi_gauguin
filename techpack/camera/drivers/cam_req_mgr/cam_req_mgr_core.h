@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 #ifndef _CAM_REQ_MGR_CORE_H_
 #define _CAM_REQ_MGR_CORE_H_
@@ -26,6 +27,8 @@
 
 #define CRM_WORKQ_NUM_TASKS 60
 
+#define MINIMUM_WORKQUEUE_SCHED_TIME_IN_MS 5
+
 #define MAX_SYNC_COUNT 65535
 
 /* Default frame rate is 30 */
@@ -33,7 +36,7 @@
 
 #define SYNC_LINK_SOF_CNT_MAX_LMT 1
 
-#define MAXIMUM_LINKS_PER_SESSION  7
+#define MAXIMUM_LINKS_PER_SESSION  4
 
 #define MAXIMUM_RETRY_ATTEMPTS 2
 

@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #include <linux/module.h>
@@ -1577,6 +1578,15 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 			link->open_req_cnt--;
 		}
 	}
+    /*
+	 * Only update the jiffies of last applied request
+	 * for SOF trigger, since it is used to protect from
+	 * applying fails in ISP which is triggered at SOF.
+	 * And, also don't need to do update for error case
+	 * since error case doesn't check the retry count.
+	 */
+	if (trigger == CAM_TRIGGER_POINT_SOF)
+		link->last_applied_jiffies = jiffies;
 
 	/*
 	 * Only update the jiffies of last applied request

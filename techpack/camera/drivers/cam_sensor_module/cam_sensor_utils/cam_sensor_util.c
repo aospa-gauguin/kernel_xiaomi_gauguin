@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (C) 2021 XiaoMi, Inc.
  */
 
 #include <linux/kernel.h>
@@ -1055,6 +1056,29 @@ int32_t msm_camera_fill_vreg_params(
 			if (j == num_vreg)
 				power_setting[i].seq_val = INVALID_VREG;
 			break;
+		case SENSOR_VREG_LDO:
+                            for (j = 0; j < num_vreg; j++) {
+
+				if (!strcmp(soc_info->rgltr_name[j],
+					"vreg_ldo")) {
+					CAM_DBG(CAM_SENSOR,
+						"i:%d j:%d VREG_LDO", i, j);
+					power_setting[i].seq_val = j;
+
+					if (VALIDATE_VOLTAGE(
+						soc_info->rgltr_min_volt[j],
+						soc_info->rgltr_max_volt[j],
+						power_setting[i].config_val)) {
+						soc_info->rgltr_min_volt[j] =
+						soc_info->rgltr_max_volt[j] =
+						power_setting[i].config_val;
+					}
+					break;
+				}
+			}
+			if (j == num_vreg)
+				power_setting[i].seq_val = INVALID_VREG;
+			break;
 		default:
 			break;
 		}
@@ -1985,6 +2009,7 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 		case SENSOR_VAF_PWDM:
 		case SENSOR_CUSTOM_REG1:
 		case SENSOR_CUSTOM_REG2:
+		case SENSOR_VREG_LDO:
 			if (power_setting->seq_val == INVALID_VREG)
 				break;
 
@@ -2101,6 +2126,7 @@ power_up_failed:
 		case SENSOR_VAF_PWDM:
 		case SENSOR_CUSTOM_REG1:
 		case SENSOR_CUSTOM_REG2:
+		case SENSOR_VREG_LDO:
 			if (power_setting->seq_val < num_vreg) {
 				CAM_DBG(CAM_SENSOR, "Disable Regulator");
 				vreg_idx = power_setting->seq_val;
@@ -2269,6 +2295,7 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		case SENSOR_VAF_PWDM:
 		case SENSOR_CUSTOM_REG1:
 		case SENSOR_CUSTOM_REG2:
+		case SENSOR_VREG_LDO:
 			if (pd->seq_val == INVALID_VREG)
 				break;
 
