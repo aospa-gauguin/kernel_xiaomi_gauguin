@@ -389,6 +389,18 @@ struct sde_connector_dyn_hdr_metadata {
 	bool dynamic_hdr_update;
 };
 
+enum mi_dimlayer_type {
+	MI_DIMLAYER_NULL = 0x0,
+	MI_DIMLAYER_AOD = 0x4,
+	MI_DIMLAYER_MAX,
+};
+
+struct mi_dimlayer_state
+{
+	enum mi_dimlayer_type mi_dimlayer_type;
+	uint32_t current_backlight;
+};
+
 /**
  * struct sde_connector - local sde connector structure
  * @base: Base drm connector structure
@@ -433,6 +445,7 @@ struct sde_connector_dyn_hdr_metadata {
  * last_cmd_tx_sts: status of the last command transfer
  * @hdr_capable: external hdr support present
  * @core_clk_rate: MDP core clk rate used for dynamic HDR packet calculation
+ * @mi_dimlayer_state: mi dimlayer state
  */
 struct sde_connector {
 	struct drm_connector base;
@@ -486,6 +499,8 @@ struct sde_connector {
 
 	bool last_cmd_tx_sts;
 	bool hdr_capable;
+
+	struct mi_dimlayer_state mi_dimlayer_state;
 };
 
 /**
@@ -970,5 +985,21 @@ int sde_connector_get_panel_vfp(struct drm_connector *connector,
  * @connector: Pointer to DRM connector object
  */
 int sde_connector_esd_status(struct drm_connector *connector);
+
+/**
+ * sde_connector_hbm_ctl - mi function to control hbm
+ * @connector: Pointer to DRM connector object
+ * @op_code: hbm operation code
+ */
+int sde_connector_hbm_ctl(struct drm_connector *connector, uint32_t op_code);
+
+int sde_connector_pre_hbm_ctl(struct drm_connector *connector, uint32_t op_code);
+
+void sde_connector_mi_update_dimlayer_state(struct drm_connector *connector,
+	enum mi_dimlayer_type mi_dimlayer_type);
+
+void sde_connector_mi_get_current_backlight(struct drm_connector *connector, uint32_t *brightness);
+
+void sde_connector_mi_get_current_alpha(struct drm_connector *connector, uint32_t brightness, uint32_t *alpha);
 
 #endif /* _SDE_CONNECTOR_H_ */

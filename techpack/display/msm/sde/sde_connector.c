@@ -14,9 +14,15 @@
 #include <linux/backlight.h>
 #include <linux/string.h>
 #include "dsi_drm.h"
+#include "dsi_defs.h"
 #include "dsi_display.h"
 #include "sde_crtc.h"
 #include "sde_rm.h"
+#include "sde_trace.h"
+#include "dsi_mi_feature.h"
+#include "dsi_display.h"
+#include "dsi_panel_mi.h"
+#include "xiaomi_frame_stat.h"
 
 #define BL_NODE_NAME_SIZE 32
 #define HDR10_PLUS_VSIF_TYPE_CODE      0x81
@@ -111,6 +117,7 @@ static int sde_backlight_device_update_status(struct backlight_device *bd)
 		rc = c_conn->ops.set_backlight(&c_conn->base,
 				c_conn->display, bl_lvl);
 		c_conn->unset_bl_level = 0;
+		c_conn->mi_dimlayer_state.current_backlight = bl_lvl;
 	}
 
 	return rc;
@@ -588,6 +595,10 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 
 	bl_config = &dsi_display->panel->bl_config;
 
+	if (bl_config->type == DSI_BACKLIGHT_WLED &&
+		bl_config->bl_level == 0)
+		return 0;
+
 	if (!c_conn->allow_bl_update) {
 		c_conn->unset_bl_level = bl_config->bl_level;
 		return 0;
@@ -760,6 +771,47 @@ struct sde_connector_dyn_hdr_metadata *sde_connector_get_dyn_hdr_meta(
 	return &c_state->dyn_hdr_meta;
 }
 
+static void _sde_connector_mi_poll_frame_start(struct drm_encoder *drm_enc)
+{
+	SDE_ATRACE_BEGIN("poll_frame_start");
+	if (sde_encoder_get_intf_mode(drm_enc) == INTF_MODE_VIDEO) {
+		sde_encoder_wait_for_event(drm_enc, MSM_ENC_VBLANK);
+		//sde_encoder_poll_line_counts(drm_enc);
+	} else {
+		sde_encoder_wait_for_event(drm_enc, MSM_ENC_VBLANK);
+	}
+	SDE_ATRACE_END("poll_frame_start");
+}
+
+static int _sde_connector_mi_dimlayer_hbm_fence(struct drm_connector *connector)
+{
+	struct sde_connector *c_conn;
+	struct dsi_display *dsi_display;
+	bool hbm_overlay = false;
+
+	if (!connector) {
+		SDE_ERROR("invalid argument\n");
+		return -EINVAL;
+	}
+
+	c_conn = to_sde_connector(connector);
+
+	if (c_conn->connector_type != DRM_MODE_CONNECTOR_DSI)
+		return 0;
+
+	dsi_display = (struct dsi_display *) c_conn->display;
+	if (!dsi_display || !dsi_display->panel) {
+		SDE_ERROR("invalid display/panel\n");
+		return -EINVAL;
+	}
+
+	if (dsi_display->panel->mi_cfg.crc_off_pending) {
+		sde_connector_pre_hbm_ctl(connector, DISPPARAM_CRC_OFF);
+		dsi_display->panel->mi_cfg.crc_off_pending = false;
+	}
+	return 0;
+}
+
 int sde_connector_pre_kickoff(struct drm_connector *connector)
 {
 	struct sde_connector *c_conn;
@@ -804,6 +856,9 @@ int sde_connector_pre_kickoff(struct drm_connector *connector)
 	params.hdr_meta = &c_state->hdr_meta;
 
 	SDE_EVT32_VERBOSE(connector->base.id);
+
+	/* fingerprint hbm fence */
+	_sde_connector_mi_dimlayer_hbm_fence(connector);
 
 	rc = c_conn->ops.pre_kickoff(connector, c_conn->display, &params);
 
@@ -1452,11 +1507,11 @@ static int sde_connector_atomic_set_property(struct drm_connector *connector,
 	 * atomic set property framework.
 	 */
 	case CONNECTOR_PROP_BL_SCALE:
-		c_conn->bl_scale = val;
+		c_conn->bl_scale = MAX_BL_SCALE_LEVEL;
 		c_conn->bl_scale_dirty = true;
 		break;
 	case CONNECTOR_PROP_SV_BL_SCALE:
-		c_conn->bl_scale_sv = val;
+		c_conn->bl_scale_sv = MAX_SV_BL_SCALE_LEVEL;
 		c_conn->bl_scale_dirty = true;
 		break;
 	case CONNECTOR_PROP_HDR_METADATA:
@@ -2149,6 +2204,7 @@ static void _sde_connector_report_panel_dead(struct sde_connector *conn,
 	bool skip_pre_kickoff)
 {
 	struct drm_event event;
+	struct dsi_display *display = (struct dsi_display *)(conn->display);
 
 	if (!conn)
 		return;
@@ -2162,6 +2218,7 @@ static void _sde_connector_report_panel_dead(struct sde_connector *conn,
 		return;
 
 	conn->panel_dead = true;
+	display->panel->mi_cfg.panel_dead_flag = true;
 	event.type = DRM_EVENT_PANEL_DEAD;
 	event.length = sizeof(bool);
 	msm_mode_object_event_notify(&conn->base.base,
@@ -2218,16 +2275,20 @@ static void sde_connector_check_status_work(struct work_struct *work)
 	struct sde_connector *conn;
 	int rc = 0;
 	struct device *dev;
+	struct dsi_display *display;
+	struct drm_panel_esd_config *esd_cfg;
 
 	conn = container_of(to_delayed_work(work),
 			struct sde_connector, status_work);
-	if (!conn) {
+	if (!conn || !conn->display) {
 		SDE_ERROR("not able to get connector object\n");
 		return;
 	}
 
 	mutex_lock(&conn->lock);
 	dev = conn->base.dev->dev;
+	display = conn->display;
+	esd_cfg = &display->panel->esd_config;
 
 	if (!conn->ops.check_status || dev->power.is_suspended ||
 			(conn->dpms_mode != DRM_MODE_DPMS_ON)) {
@@ -2239,10 +2300,15 @@ static void sde_connector_check_status_work(struct work_struct *work)
 	rc = conn->ops.check_status(&conn->base, conn->display, false);
 	mutex_unlock(&conn->lock);
 
-	if (rc > 0) {
-		u32 interval;
+	if (rc > 0 || esd_cfg->status_value_ignore) {
+		u32 interval = esd_cfg->esd_status_interval ?
+			esd_cfg->esd_status_interval : STATUS_CHECK_INTERVAL_MS;
 
-		SDE_DEBUG("esd check status success conn_id: %d enc_id: %d\n",
+		if (rc > 0)
+			SDE_DEBUG("esd check status success conn_id: %d enc_id: %d\n",
+				conn->base.base.id, conn->encoder->base.id);
+		else
+			SDE_INFO("Ignore esd check status error conn_id: %d enc_id: %d\n",
 				conn->base.base.id, conn->encoder->base.id);
 
 		/* If debugfs property is not set then take default value */
@@ -2806,4 +2872,114 @@ int sde_connector_event_notify(struct drm_connector *connector, uint32_t type,
 			connector->base.id, type, val);
 
 	return ret;
+}
+
+int sde_connector_hbm_ctl(struct drm_connector *connector, uint32_t op_code)
+{
+	int ret = 0;
+
+	SDE_ATRACE_BEGIN("sde_connector_hbm_ctl");
+	ret = dsi_display_hbm_set_disp_param(connector, op_code);
+	SDE_ATRACE_END("sde_connector_hbm_ctl");
+	return ret;
+}
+
+int sde_connector_pre_hbm_ctl(struct drm_connector *connector, uint32_t op_code)
+{
+	int ret;
+	/* close dimming */
+	ret = dsi_display_hbm_set_disp_param(connector, op_code);
+	return ret;
+}
+
+#define to_dsi_bridge(x)     container_of((x), struct dsi_bridge, base)
+
+static uint32_t interpolate(uint32_t x, uint32_t xa, uint32_t xb, uint32_t ya, uint32_t yb)
+{
+	uint32_t bf;
+
+	bf = ya - (ya - yb) * (x - xa) / (xb - xa);
+
+	SDE_DEBUG("backlight brightness:%d, [i-1]bl:%d, [i]bl:%d, [i-1]alpha:%d, [i]alpha:%d, bf:%d",
+			x, xa, xb, ya, yb, bf);
+
+	return bf;
+}
+
+static uint32_t brightness_to_alpha(struct dsi_panel_mi_cfg *mi_cfg, uint32_t brightness)
+{
+	int i;
+	int level = mi_cfg->brightnes_alpha_lut_item_count;
+
+	if (brightness == 0x0)
+		return mi_cfg->brightness_alpha_lut[0].alpha;
+
+	for (i = 0; i < level; i++){
+		if (mi_cfg->brightness_alpha_lut[i].brightness >= brightness)
+			break;
+	}
+
+	if (i == level)
+		return mi_cfg->brightness_alpha_lut[i - 1].alpha;
+	else
+		return interpolate(brightness,
+							mi_cfg->brightness_alpha_lut[i-1].brightness, mi_cfg->brightness_alpha_lut[i].brightness,
+							mi_cfg->brightness_alpha_lut[i-1].alpha, mi_cfg->brightness_alpha_lut[i].alpha);
+}
+
+void sde_connector_mi_get_current_alpha(struct drm_connector *connector, uint32_t brightness, uint32_t *alpha)
+{
+	struct dsi_display *display = NULL;
+	struct dsi_bridge *c_bridge = NULL;
+	struct dsi_panel_mi_cfg *mi_cfg = NULL;
+
+	if (!connector || !connector->encoder || !connector->encoder->bridge) {
+		SDE_ERROR("Invalid connector/encoder/bridge ptr\n");
+		return;
+	}
+
+	c_bridge =  to_dsi_bridge(connector->encoder->bridge);
+	display = c_bridge->display;
+	if (!display || !display->panel) {
+		SDE_ERROR("invalid display/panel ptr\n");
+		return;
+	}
+
+	mi_cfg = &display->panel->mi_cfg;
+
+	*alpha = brightness_to_alpha(mi_cfg, brightness);
+	return;
+}
+
+void sde_connector_mi_get_current_backlight(struct drm_connector *connector, uint32_t *brightness)
+{
+	struct sde_connector *c_conn = to_sde_connector(connector);
+	struct dsi_display *display = NULL;
+	struct dsi_bridge *c_bridge = NULL;
+
+	if (!connector || !connector->encoder || !connector->encoder->bridge) {
+		SDE_ERROR("Invalid connector/encoder/bridge ptr\n");
+		return;
+	}
+
+	c_bridge =  to_dsi_bridge(connector->encoder->bridge);
+	display = c_bridge->display;
+	if (!display || !display->panel) {
+		SDE_ERROR("invalid display/panel ptr\n");
+		return;
+	}
+
+	if (display->panel->mi_cfg.in_aod) {
+		*brightness = display->panel->mi_cfg.aod_backlight;
+		return;
+	}
+
+	*brightness = c_conn->mi_dimlayer_state.current_backlight;
+}
+
+void sde_connector_mi_update_dimlayer_state(struct drm_connector *connector,
+	enum mi_dimlayer_type mi_dimlayer_type)
+{
+	struct sde_connector *c_conn = to_sde_connector(connector);
+	c_conn->mi_dimlayer_state.mi_dimlayer_type = mi_dimlayer_type;
 }
